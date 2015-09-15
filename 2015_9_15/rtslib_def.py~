@@ -1,0 +1,268 @@
+from rtslib import FileIOStorageObject, BlockStorageObject
+
+from rtslib import FabricModule, Target, TPG
+
+from rtslib import NetworkPortal, NodeACL, LUN, MappedLUN
+
+import rtslib.root as root
+
+
+
+from ctypes import * 
+
+import rtslib
+
+import os
+
+''' 
+  
+class Storage_obj(Structure):  
+    _fields_=[  
+            ('original_name',c_char*100),  
+            ('name',c_char*500),  
+            ('artist',c_char*500),  
+            ('genre',c_char*30),  
+            ('album',c_char*500),  
+            ('release_date',c_char*20),  
+            ('directory',c_char*300),  
+            ('size',c_int)  
+            ]  
+  
+    def setAttr(self,original_name,name,artist,genre,album,release_date,directory,size):  
+        self.original_name=original_name;  
+        self.name=name;  
+        self.artist=artist;  
+        self.genre=genre;  
+        self.album=album;  
+        self.release_date=release_date;  
+        self.directory=directory;  
+        self.size=size;  
+'''
+def create_fileio_Target( backing_device, diskname, filesize):
+	
+
+	f = FileIOStorageObject(name = diskname, dev = backing_device,size = filesize)
+
+	iscsiMod = FabricModule('iscsi')
+
+	target = Target(iscsiMod, mode='create')   
+
+	tpg = TPG(target, tag=None, mode='create')
+
+	portal = NetworkPortal(tpg, '0.0.0.0', mode='create')
+
+	lun = LUN(tpg, lun=None,storage_object = f)
+
+	tpg.enable = True
+
+	return target.wwn
+
+
+def create_block_Target( backing_device, diskname):
+
+
+	fio = BlockStorageObject(name = diskname, dev = backing_device)
+
+	iscsiMod = FabricModule('iscsi')
+
+	target = Target(iscsiMod, mode='create')
+
+	tpg = TPG(target, tag=None, mode='create')
+
+	tpg.set_attribute('generate_node_acls', '1')
+
+	tpg.set_attribute('cache_dynamic_acls', '1')
+
+	tpg.set_attribute('authentication', '0')
+
+	tpg.set_attribute('demo_mode_write_protect', '0')
+
+	portal = NetworkPortal(tpg, '192.168.1.55', mode='any')
+
+	lun = LUN(tpg, lun=None, storage_object = fio)
+
+	tpg.enable = True
+
+	return target.wwn
+
+
+
+
+	
+
+def removeTarget(iqn):
+
+	iscsiMod = rtslib.FabricModule('iscsi')
+
+	tgt = rtslib.Target(iscsiMod,iqn,'lookup')
+
+	tgt.delete()
+
+	print ("the %s has been deleted" %(iqn))
+
+
+def remove_portals(iqn ,tag_index ,ip_address, port):
+
+	iscsiMod = FabricModule('iscsi')
+
+	target = Target(iscsiMod, iqn, mode='lookup')
+
+	tpg = TPG(target, tag = tag_index, mode = 'any')
+
+	tpg.enable = True
+
+	portal = NetworkPortal(tpg, ip_address, port, mode='lookup')
+
+	portal.delete()
+
+
+
+
+def create_initiator_auth(iqn, tag_index, new_iqn, userid, password):
+
+	iscsiMod = FabricModule('iscsi')
+
+	target = Target(iscsiMod, iqn, mode = 'lookup')
+
+	print list(target.tpgs)
+
+	tpg = TPG(target, tag = tag_index, mode = 'any')
+
+	tpg.enable = True
+	
+	tpg.set_attribute('authentication', '1')
+
+	nodeacl = NodeACL(tpg, 'new_iqn')
+
+	nodeacl.chap_userid = userid
+
+	nodeacl.chap_password = password
+
+
+
+
+
+def creat_mutual_auth(iqn, tag_index, new_iqn, mutual_userid, mutual_password):
+
+	iscsiMod = FabricModule('iscsi')
+
+	target = Target(iscsiMod, iqn, mode = 'lookup')
+
+	print list(target.tpgs)
+
+	tpg = TPG(target, tag = tag_index, mode = 'any')
+
+	tpg.enable = True
+	
+	tpg.set_attribute('authentication', '1')
+
+	nodeacl = NodeACL(tpg, 'new_iqn')
+
+	nodeacl.chap_mutual_userid = mutual_userid
+
+	nodeacl.chap_mutual_password = mutual_password
+
+
+
+def creat_TPG_auth(iqn, tag_index, userid, password, mutual_userid, mutual_password):
+
+	iscsiMod = FabricModule('iscsi')
+
+	iscsiMod._set_discovery_enable_auth(enable)
+
+	iscsiMod._set_discovery_userid(userid)
+
+	iscsiMod._set_discovery_password(password)
+
+	target = Target(iscsiMod, iqn, mode = 'lookup')
+
+	print list(target.tpgs)
+
+	tpg = TPG(target, tag = tag_index, mode = 'any')
+
+	tpg.enable = True
+	
+	tpg.set_attribute('authentication', '1')
+
+	tpg.chap_userid = userid
+
+	tpg.chap_password = password
+
+	tpg.chap_mutual_userid = mutual_userid
+
+	tpg.chap_mutual_password = mutual_password
+
+
+
+def creat_discovery_auth(userid, password):
+
+	iscsiMod = FabricModule('iscsi')
+
+	iscsiMod._set_discovery_enable_auth(enable)
+
+	iscsiMod._set_discovery_userid(userid)
+
+	iscsiMod._set_discovery_password(password)
+
+
+
+
+def creat_mutual_discovery_auth(mutual_userid, mutual_password):
+
+
+	iscsiMod = FabricModule('iscsi')
+
+	iscsiMod._set_discovery_enable_auth(enable)
+
+	iscsiMod._set_discovery_userid(mutual_userid)
+
+	iscsiMod._set_discovery_password(mutual_password)
+
+
+
+
+
+def create_portals(iqn ,tag_index ,ip_address, port):
+
+	iscsiMod = FabricModule('iscsi')
+
+	target = Target(iscsiMod, iqn, mode='lookup')
+
+	print list(target.tpgs)
+
+	tpg = TPG(target, tag = tag_index, mode = 'any')
+
+	tpg.enable = True
+
+	portal = NetworkPortal(tpg, ip_address, port, mode='create')
+
+
+def modify_block_size(block_diskname,set_block_size):
+
+	fio = BlockStorageObject(name = block_diskname)
+
+	fio.set_attribute('block_size','set_block_size')
+
+	return fio.get_attribute('block_size')
+
+
+def delete_all_targets():
+	rtsroot = root.RTSRoot()
+    rtsroot.clearconfig(confirm = true)
+
+
+	print list(rtsroot.storage_objects)
+
+
+	
+
+
+	
+	#os.system("targetcli clearconfig confirm = true")
+
+	return 1
+	
+
+	
+	
+
