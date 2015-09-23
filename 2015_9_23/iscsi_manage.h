@@ -1,4 +1,8 @@
 
+#include <stdbool.h>
+#include <stdarg.h>
+
+
 #define MAXNAMELEN 100
 #define MAXIPLEN 16
 #define MAXCHAPPWD 16
@@ -6,17 +10,20 @@
 #define MAXLUNS 10
 #define MAXACLS 100
 #define MAXPORTALS 21
-#define MAXWWNLEN 100
+#define MAXWWNLEN 256
+
+enum iscsi_plugin {FILEIO = 1,BLOCK = 2};
+enum iscsi_AuthMethod {CHAP = 1,NONE = 2};
 
 /*****************************define the struct**************************************/
 typedef struct storage_obj
 {
     char dev[MAXNAMELEN];  // "/home/admin/sparcedata",
     char name[MAXNAMELEN]; // "vol4",
-    int  plugin;            // "fileio", "blockio"
-    uint64_t size;          // 2147483648,
+    int  iscsi_plugin;            // 1 for "fileio", 2 for "blockio"
+    uint64_t size ;          // 2147483648,
     int write_back;         // true,
-    char wwn[MAXNAMELEN];    // "dffc64ce-1e34-4410-9531-b71bb7b44848"
+    
 } storage_obj_t;
 
 
@@ -31,7 +38,7 @@ typedef struct portals
 
 typedef struct  parameters
 {
-    int AuthMethod;   // "CHAP = 1,None = 2", "CHAP mutual = 3", etc
+    int iscsi_AuthMethod;   // "CHAP = 1,None = 2", "CHAP mutual = 3", etc
 #if 0
         "DataDigest": "CRC32C,None",
         "DataPDUInOrder": "Yes",
@@ -83,18 +90,26 @@ typedef struct iscsitarget
     char chap_userid[MAXCHAPUSER];          // "rts-user",
     
     bool         enable;
-    char            luns[MAXLUNS][MAXNAMELEN];  // a list of backstores -- "/backstores/fileio/vol4"
+    //char            luns[MAXLUNS][MAXNAMELEN];  // a list of backstores -- "/backstores/fileio/vol4"
     char            node_acls[MAXACLS][MAXNAMELEN]; // a list of initiators -- "iqn.1991-05.com.microsoft:ibm-t410s"; we don't support mapped luns for now.
+    int             node_acls_num ;
     
     int             tag;        //always 1; which implies one target has one TPG only.
     char            wwn[MAXWWNLEN]; //specified by user
+
 } iscsitarget_t;
 
 
-int creat_block_target(storage_obj_t *sobj, iscsitarget_t *target);
-int creat_fileio_target(storage_obj_t *sobj, iscsitarget_t *target);
-int delete_all_targets(void);
-int delete_target(char wwn[]);
-int set_mutual_auth(char wwn[], int tag, char mutual_user[], char mutual_passwd[],char user[], char passwd[]);
-int set_initiators(char wwn[], int tag, char node_acls[][MAXNAMELEN], int number);
-int delete_initiators(char wwn[], int tag, char node_acls[][MAXNAMELEN], int number);
+// int iscsi_create_block_target(storage_obj_t *sobj, iscsitarget_t *target);
+// int iscsi_create_fileio_target(storage_obj_t *sobj, iscsitarget_t *target);
+
+int iscsi_create_target(storage_obj_t *sobj, iscsitarget_t *target);
+int iscsi_del_all_targets(void);
+int iscsi_del_target(bool del_back, char wwn[]);
+int iscsi_set_ACLs_auth(char wwn[], int tag, char acl_wwn[][MAXNAMELEN],int number, char mutual_user[], char mutual_passwd[],char user[], char passwd[]);
+int iscsi_del_ACLs_auth(char wwn[], int tag);
+int iscsi_set_initiators(char wwn[], int tag, char node_acls[][MAXNAMELEN], int number);
+int iscsi_del_initiators(char wwn[], int tag, char node_acls[][MAXNAMELEN], int number);
+//int iscsi_del_all_initiators(char wwn[], int tag);
+//int iscsi_set_mutual_auth(char wwn[], int tag, char mutual_user[], char mutual_passwd[],char user[], char passwd[]);
+//int iscsi_del_mutual_auth(char wwn[], int tag);

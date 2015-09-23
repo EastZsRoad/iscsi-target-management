@@ -10,8 +10,6 @@ from rtslib import RTSRoot
 
 from rtslib import RTSLibError, RTSLibBrokenLink
 
-import rtslib.root as root
-
 from rtslib.utils import fread, fwrite, RTSLibError, generate_wwn
 
 from rtslib.utils import is_dev_in_use, get_blockdev_type, get_blockdev_size
@@ -20,7 +18,7 @@ from rtslib.utils import convert_scsi_path_to_hctl, convert_scsi_hctl_to_path
 
 from rtslib.tcm import so_mapping, StorageObject
 
-from rtslib.utils import RTSLibError, RTSLibBrokenLink, modprobe, mount_configfs
+from rtslib.utils import RTSLibError, RTSLibBrokenLink, RTSLibNotInCFS, modprobe, mount_configfs
 
 from rtslib.utils import dict_remove, set_attributes
 
@@ -29,51 +27,27 @@ from rtslib.node import CFSNode
 from ctypes import *  
 
 import rtslib
+
+import rtslib.root as root
+
 import os
-import stat
-import re
-import glob
-import resource
-import uuid
-import socket
-import subprocess
-from contextlib import contextmanager
-import json
 
 
 
-
-
-
-def create_fileio_Target( backing_device, diskname, filesize):
-	
-
-	fio = FileIOStorageObject(name = diskname, dev = backing_device,size = filesize)
-
-	iscsiMod = FabricModule('iscsi')
-
-	target = Target(iscsiMod, mode='create')   
-
-	tpg = TPG(target, tag=None, mode='create')
-
-	portal = NetworkPortal(tpg, '0.0.0.0', mode='create')
-
-	lun = LUN(tpg, lun=None,storage_object = fio)
-
-	tpg.enable = True
-
-	return target.wwn
-
-def create_block_backstore( backing_device, diskname):
-
+def create_backstore(plugin, diskname, backing_device, filesize):
 	try:
-		bio = BlockStorageObject(name = diskname, dev = backing_device)
+		if plugin == 1:
+			fio = FileIOStorageObject(name = diskname, dev = backing_device, size = filesize)
+			
+	
+		elif plugin == 2:
+			bio = BlockStorageObject(name = diskname, dev = backing_device)
+			# print ("the %s size is %i"%fio.plugin %bio.size)
+		else :
+			print "set plugin 1 for file 2 for block" 
 
-		print ("the blockmajor is %i" %bio.major)
-
-		print ("the blocksize is %i" %bio.size)
-
-
+			return -1
+		
 		return 0
 
 	except Exception,e:
@@ -81,34 +55,35 @@ def create_block_backstore( backing_device, diskname):
 		print e
 
 		return  -1
+	
 
 		
-def create_target():
+def create_target(iqn):
+	try:
+		iscsiMod = FabricModule('iscsi')
 
-	iscsiMod = FabricModule('iscsi')
+		target = Target(fabric_module = iscsiMod,wwn = iqn,  mode='create')
 
-	target = Target(iscsiMod, mode='create')
+		return 0
 
-	return target.wwn
+	except Exception, e:
+
+		print e
+
+		return -1
 
 
 
 
-
-
-def create_tpg(diskname, iqn, ip_address, port):
+def create_tpg( iqn, tag_index, ip_address, port):
 
 	try:
-
-		bio = BlockStorageObject(name = diskname)
 
 		iscsiMod = FabricModule('iscsi')
 
 		target = Target(iscsiMod, wwn = iqn, mode='lookup')
 
-		tpg = TPG(target, tag=None, mode='create')
-
-		lun = LUN(tpg, 0, bio)
+		tpg = TPG(target, tag = tag_index, mode='create')
 
 		portal = NetworkPortal(tpg, ip_address, port, mode='any')
 
@@ -121,6 +96,51 @@ def create_tpg(diskname, iqn, ip_address, port):
 		return -1
 
 
+def map_target2sobj(iqn, tag_index, plugin, diskname):
+	try:
+		if plugin == 1:
+
+			fio = FileIOStorageObject(name = diskname)
+
+			iscsiMod = FabricModule('iscsi')
+
+			target = Target(iscsiMod, wwn = iqn, mode='lookup')
+
+			tpg = TPG(target, tag = tag_index, mode='lookup')
+
+			lun = LUN(tpg, 0, fio)
+
+		elif plugin == 2:
+
+			bio = BlockStorageObject(name = diskname)
+
+			iscsiMod = FabricModule('iscsi')
+
+			target = Target(iscsiMod, wwn = iqn, mode='lookup')
+
+			tpg = TPG(target, tag = tag_index, mode='lookup')
+
+			lun = LUN(tpg, 0, bio)
+
+			#print lun.storage_object.delete()
+
+		else:
+			print "Can not find correct plugin"
+
+			return -1
+
+		return 0
+
+	except Exception,e:
+
+		print e
+
+		return -1
+
+
+
+
+
 def enable_tpg(iqn, tag_index , enable):
 
 	try:
@@ -130,7 +150,7 @@ def enable_tpg(iqn, tag_index , enable):
 
 		tpg = TPG(target, tag = tag_index, mode='lookup')
 
-		tpg.enable = True
+		tpg.enable = enable
 
 		return 0
 
@@ -180,7 +200,7 @@ def set_tpg_attr(iqn, tag_index, auth, cach, defa, demo, gene, logi, neti, prod)
 
 
 
-def delete_target(iqn):
+def delete_target(del_back, iqn):
 
 	try:
 		rtsroot = root.RTSRoot()
@@ -189,11 +209,20 @@ def delete_target(iqn):
 
 		tgt = rtslib.Target(iscsiMod,iqn,'lookup')
 
+		if del_back == 1:
+
+			for tpg in tgt.tpgs:
+
+				for lun in tpg.luns:
+
+					print ("the %s has been deleted" %(lun.storage_object))
+				
+					lun.storage_object.delete()
+
 		tgt.delete()
 
 		print ("the %s has been deleted" %(iqn))
 
-		print list(rtsroot.targets)
 
 		return 0
 
@@ -201,25 +230,38 @@ def delete_target(iqn):
 
 		print e
 
-		return 1
+		return -1
 
 
-def delete_backstore(diskname):
+def delete_backstore(plugin, diskname):
 
 	try:
-		io = BlockStorageObject(name = diskname)
+		if plugin == 1:
+			fio = FileIOStorageObject(name = diskname)
 
-		io.delete()
+			fio.delete()
 
-		print ("the %s has been deleted" %(diskname))
+			print ("the fileio %s has been deleted" %(diskname))
 
+
+		elif plugin == 2:
+
+			io = BlockStorageObject(name = diskname)
+
+			io.delete()
+
+			print ("the blockio %s has been deleted" %(diskname))
+
+		else:
+			return -1
+		
 		return 0
 
 	except Exception,e:
 
 		print e
 
-		return 1
+		return -1
 	
 
 
@@ -244,7 +286,7 @@ def set_initiator(iqn, tag_index, initi_wwn):
 		iscsiMod = FabricModule('iscsi')
 
 		target = Target(iscsiMod, iqn, mode='lookup')
-
+		
 		tpg = TPG(target, tag = tag_index, mode = 'any')
 
 		node = NodeACL(tpg, node_wwn = initi_wwn, mode='create')
@@ -253,13 +295,19 @@ def set_initiator(iqn, tag_index, initi_wwn):
 
 		maplun = MappedLUN(parent_nodeacl = node,mapped_lun = 0,tpg_lun=0)
 
-		return 1
+		return 0
 
-	except Exception, e:
+	except RTSLibNotInCFS, e:
 
 		print e
 
-		return 0
+		return -1
+
+	except RTSLibError, e:
+
+		print e
+
+		return -1
 
 def delete_initiator(iqn, tag_index, initi_wwn):
 
@@ -274,19 +322,33 @@ def delete_initiator(iqn, tag_index, initi_wwn):
 
 		node.delete()
 
-		return 1
+		return 0
 
 	except Exception, e:
 
 		print e
 
-		return 0
+		return -1
 	
+# def delete_all_initiator(iqn,tag):
+# 	try:
+# 		iscsiMod = FabricModule('iscsi')
+
+# 		target = Target(iscsiMod, iqn, mode='lookup')
+
+# 		tpg = TPG(target, tag = tag_index, mode = 'lookup')
+
+# 		for lun in tpg.node_acls:
+
+# 			lun.delete()
+
+# 	except Exception, e:
+# 		raise e
 
 
 
 
-'''
+
 # def create_initiator_auth(iqn, tag_index, new_iqn, userid, password):
 
 # 	iscsiMod = FabricModule('iscsi')
@@ -311,27 +373,62 @@ def delete_initiator(iqn, tag_index, initi_wwn):
 
 
 
-# def creat_mutual_auth(iqn, tag_index, new_iqn, mutual_userid, mutual_password):
+def set_ACLs_mutual_auth(iqn, tag_index, acl_iqn, userid, password, mutual_userid, mutual_password):
 
-# 	iscsiMod = FabricModule('iscsi')
+	try:
+		iscsiMod = FabricModule('iscsi')
 
-# 	target = Target(iscsiMod, iqn, mode = 'lookup')
+		target = Target(iscsiMod, iqn, mode = 'lookup')
 
-# 	print list(target.tpgs)
+		tpg = TPG(target, tag = tag_index, mode = 'lookup')
 
-# 	tpg = TPG(target, tag = tag_index, mode = 'any')
+		tpg.enable = True
+		
+		tpg.set_attribute('authentication', '1')
 
-# 	tpg.enable = True
-	
-# 	tpg.set_attribute('authentication', '1')
+		tpg.set_attribute('generate_node_acls', '0')
 
-# 	nodeacl = NodeACL(tpg, 'new_iqn')
+		nodeacl = NodeACL(tpg, acl_iqn,mode='any')
 
-# 	nodeacl.chap_mutual_userid = mutual_userid
+		nodeacl.chap_userid = userid
 
-# 	nodeacl.chap_mutual_password = mutual_password
+		nodeacl.chap_password = password
 
-'''
+		nodeacl.chap_mutual_userid = mutual_userid
+
+		nodeacl.chap_mutual_password = mutual_password
+
+		return 0
+
+	except Exception,e:
+
+		print e
+
+		return -1
+
+
+def del_ACLs_mutual_auth(iqn, tag_index):
+	try:
+		iscsiMod = FabricModule('iscsi')
+
+		target = Target(iscsiMod, iqn, mode = 'lookup')
+
+		tpg = TPG(target, tag = tag_index, mode = 'lookup')
+		
+		tpg.set_attribute('authentication', '0')
+
+		tpg.set_attribute('generate_node_acls', '0')
+
+		return 0
+
+	except Exception,e:
+
+		print e
+
+		return -1
+
+
+
 
 def set_TPG_mutual_auth(iqn, tag_index , userid, password, mutual_userid, mutual_password):
 
@@ -346,6 +443,12 @@ def set_TPG_mutual_auth(iqn, tag_index , userid, password, mutual_userid, mutual
 		
 		tpg.set_attribute('authentication', '1')
 
+		tpg.set_attribute('generate_node_acls', '1')
+
+		tpg.set_attribute('cache_dynamic_acls', '1')
+
+		tpg.set_attribute('demo_mode_write_protect', '0')
+
 		tpg.chap_userid = userid
 
 		tpg.chap_password = password
@@ -354,18 +457,43 @@ def set_TPG_mutual_auth(iqn, tag_index , userid, password, mutual_userid, mutual
 
 		tpg.chap_mutual_password = mutual_password
 
-		return 1
+		return 0
 
 	except Exception,e:
 
 		print e
 
+		return -1
+
+def del_TPG_mutual_auth(iqn, tag_index):
+
+	try:
+		iscsiMod = FabricModule('iscsi')
+
+		target = Target(iscsiMod, iqn, mode = 'lookup')
+
+		tpg = TPG(target, tag = tag_index , mode = 'lookup')
+
+		tpg.enable = True
+		
+		tpg.set_attribute('authentication', '0')
+
+		tpg.set_attribute('generate_node_acls', '0')
+
 		return 0
+
+	except Exception,e:
+
+		print e
+
+		return -1
+
+
 
 	
 
 
-'''
+
 
 # def creat_discovery_auth(userid, password):
 
@@ -409,7 +537,7 @@ def set_TPG_mutual_auth(iqn, tag_index , userid, password, mutual_userid, mutual
 
 # 	portal = NetworkPortal(tpg, ip_address, port, mode='create')
 
-'''
+
 def modify_block_size(block_diskname,set_block_size):
 
 	fio = BlockStorageObject(name = block_diskname)
@@ -421,19 +549,16 @@ def modify_block_size(block_diskname,set_block_size):
 
 def delete_all_targets():
 	rtsroot = root.RTSRoot()
+
 	print "Before clearconfigs"
 	print list(rtsroot.storage_objects)
 	print list(rtsroot.targets)
-	
 
 	rtsroot.clear_existing(True)
 
-
 	print "after clearconfigs"
-	print list(rtsroot.storage_objects)
-	print list(rtsroot.targets)
 
-	return 1
+	return 0
 	
 
 	
